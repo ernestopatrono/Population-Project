@@ -12,16 +12,16 @@ from scipy.ndimage import label, binary_dilation
 
 # crear una grid con cell values
 
-GRID_SIZE = (60, 70)
+GRID_SIZE = (50, 50)
 
 #NUM_REGIONS representa ...
-NUM_REGIONS = 2
+NUM_REGIONS = 3
 
 #por ahora una grid de valores random en cada pixel, en vez d un mapa de poblacion
 base_grid = np.random.rand(*GRID_SIZE)
 
 #Create the region grid (each cell stores a region ID)
-regions_grid = np.random.randint(1, NUM_REGIONS + 1, size=GRID_SIZE, dtype=np.uint8)
+regions_grid = np.random.randint(1, NUM_REGIONS + 1, size=GRID_SIZE, dtype=np.uint16)
 
 #pruebo definir una funcion para poder visualizar distintas grids juntas o separadas segun necesite
 def visualize_grids(*grids, titles=None, cmap="tab10"):
@@ -64,7 +64,7 @@ def visualize_grids(*grids, titles=None, cmap="tab10"):
 #visualize_grids(base_grid, region_grid, titles=None, cmap="tab10")
 
 #seteo una celda inicial donde empezaria a contar poblacion
-SEED_CELL = (17,17)
+SEED_CELL = (23,23)
 
 seed_value = regions_grid[SEED_CELL]
 
@@ -72,23 +72,6 @@ seed_value = regions_grid[SEED_CELL]
 REGION_POP = 332
 
 #lo siguiente es para probar la identificacion de el borde de una region:
-def find_region_border(grid, region_value):
-    # Step 1: Create a mask for the region (cells that have the same value)
-    region_mask = grid == region_value
-   
-    # Step 2: Label connected regions in the mask
-    labeled, num_features = label(region_mask)
-   
-    # Step 3: Dilate the region to expand it by one pixel
-    dilated_region = binary_dilation(region_mask).astype(int)
-    
-    # Step 4: The border is the difference between the dilated region and the original region
-    border_mask = dilated_region & ~region_mask
-    
-    # Get the coordinates of the border cells
-    border_cells = np.argwhere(border_mask)
-    
-    return border_cells, border_mask
 
 def find_region_containing_cell(grid, target_value, target_coords):
     """
@@ -109,12 +92,15 @@ def find_region_containing_cell(grid, target_value, target_coords):
     
     # Optionally, find the border of the region
     dilated_region = binary_dilation(region_cells)
-    border_mask = dilated_region & ~region_cells
+    #Nota: esta dilatacion es en cruz, nosea no agrega esquinas diagonales, mas adelante puedo implelentar que agregue pi/4 de las esuqinas que encuentre.
+    #Tambien tengo que considerar el area terrestre que cada celda cubre y quizas ajustar la dilatacion de acuerdo con eso asi es realmente uniforme.
     
+    border_mask = dilated_region & ~region_cells
+
     return region_cells, border_mask, labeled
 
 #para testear el border dettection arond la celda, doy el mismo valor a un rectangulo alreedor de la celda
-region_size = 25
+region_size = 2
 # Calculate the bounds, making sure they are clamped within the grid limits
 start_row = max(SEED_CELL[0] - region_size // 2, 0)
 end_row = min(SEED_CELL[0] + region_size // 2, regions_grid.shape[0])
@@ -127,10 +113,74 @@ region_cells, border_mask, labeled = find_region_containing_cell(regions_grid, s
 
 # Step 2: Visualize the region and its border
 bordered_region_grid = np.zeros_like(regions_grid)
-bordered_region_grid[region_cells] = 1  # Mark the region cells with value 10
-bordered_region_grid[border_mask] = 3  # Mark the border cells with value 5
+#ONLY USE NON ZERO NATURAL NUMBERS HERE NEXT
+value_region = 1
+value_border = 2
+bordered_region_grid[region_cells] = value_region  # Mark the region cells with value 10
+bordered_region_grid[border_mask] = value_border  # Mark the border cells with value 5
 
 visualize_grids(bordered_region_grid, titles=None, cmap="viridis")
 
 #sugerencia para identificar el boundary de una region:
 #For very sparse grids (where most cells have the same value), you might want to look into sparse matrices (e.g., using scipy.sparse) to reduce memory usage.
+
+#parece que funciona el identificador de borde, pruebo a diseñar un chequeo de que funciono realmente
+#el testeo dio bien, lo deje como comentado aca:
+'''
+for i in range(GRID_SIZE[0]):  # Loop over rows
+    for j in range(GRID_SIZE[1]):  # Loop over columns
+        if bordered_region_grid[i,j] == value_region:
+            if regions_grid[i,j] != seed_value:
+                print("ERROR")
+
+for i in range(GRID_SIZE[0]):  # Loop over rows
+    for j in range(GRID_SIZE[1]):  # Loop over columns
+        if regions_grid[i,j] == seed_value:
+            if bordered_region_grid[i,j] == value_border:
+                print("ERROR")
+                
+if bordered_region_grid[SEED_CELL] != value_region:
+    print("ERROR")
+'''
+#ahora voy a probar loopear la dolatacion a ver que pasa
+#bien lo pude hacer, me sirvio para entender mejor lo que estoy haciendo, ahora lo dejo como comentado
+'''
+changing_grid = np.copy(regions_grid)
+while not np.all(border_mask == False):
+    changing_grid[border_mask] = seed_value
+    region_cells, border_mask, labeled = find_region_containing_cell(changing_grid, seed_value, SEED_CELL)
+    bordered_region_gridd = np.zeros_like(changing_grid)
+    bordered_region_gridd[region_cells] = value_region  # Mark the region cells with value 10
+    bordered_region_gridd[border_mask] = value_border  # Mark the border cells with value 5
+    visualize_grids(bordered_region_gridd, titles=None, cmap="viridis")
+'''
+#ahora pruebo a seleccionar una celda de entre las del borde dada cierta condicion
+#aqui identifico las celdas del borde, creando un array con las coordenadas de dichas entries
+
+true_indices = np.argwhere(border_mask)
+
+#numero de pixeles q forman parte del borde
+numero_pixels = true_indices.shape[0]
+
+#ejemplo simple de condicion:una celda random en elborde
+random_index = np.random.randint(0, numero_pixels)
+random_entry = true_indices[random_index]
+
+#ahora pinto esa celda con el valor original de la celda seed
+
+#regions_grid[random_entry] = seed_value
+regions_grid[tuple(random_entry)] = seed_value
+
+#Para testear, pruebo hacer el proceso de bordear de nuevo:
+    
+region_cells, border_mask, labeled = find_region_containing_cell(regions_grid, seed_value, SEED_CELL)
+
+# Step 2: Visualize the region and its border
+bordered_region_grid = np.zeros_like(regions_grid)
+
+bordered_region_grid[region_cells] = value_region  # Mark the region cells with value 10
+bordered_region_grid[border_mask] = value_border  # Mark the border cells with value 5
+
+visualize_grids(bordered_region_grid, titles=None, cmap="viridis")
+
+    
