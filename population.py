@@ -1,29 +1,21 @@
 # -*- coding: utf-8 -*-
-"""
-Population project
-"""
 
-# Aca voy a intentar
-#Por ahora estoy  haciendo el codigo sin involucrar datos geograficos reales
+"""
+Trying to recreate this:
+https://www.vox.com/2015/5/27/8668967/world-population-map
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import label, binary_dilation
 
-# crear una grid con cell values
+def population():
+    '''
+    Loads the 2d array to use as base.
+    '''
+    data = np.load('array_from_tif.npy')
+    return data
 
-GRID_SIZE = (50, 50)
-
-#NUM_REGIONS representa ...
-NUM_REGIONS = 3
-
-#por ahora una grid de valores random en cada pixel, en vez d un mapa de poblacion
-base_grid = np.random.rand(*GRID_SIZE)
-
-#Create the region grid (each cell stores a region ID)
-regions_grid = np.random.randint(1, NUM_REGIONS + 1, size=GRID_SIZE, dtype=np.uint16)
-
-#pruebo definir una funcion para poder visualizar distintas grids juntas o separadas segun necesite
 def visualize_grids(*grids, titles=None, cmap="tab10"):
     """
     Visualizes one or more grids.
@@ -61,23 +53,45 @@ def visualize_grids(*grids, titles=None, cmap="tab10"):
 
     plt.show()
     
-#visualize_grids(base_grid, region_grid, titles=None, cmap="tab10")
+def visualize_overlay(base_grid, overlay_grid,
+base_cmap="Greys", overlay_cmap="viridis",
+overlay_alpha=0.5, title="Overlay Plot"):
+    """
+    Displays base_grid and overlay_grid on top of each other.
+    Parameters:
+    base_grid (np.ndarray): The background dataset.
+    overlay_grid (np.ndarray): The dataset to overlay on top of the base.
+    base_cmap (str): Colormap for the base grid.
+    overlay_cmap (str): Colormap for the overlay grid.
+    overlay_alpha (float): Transparency level for the overlay (0.0 to 1.0).
+    title (str): Title for the plot.
+    """
 
-#seteo una celda inicial donde empezaria a contar poblacion
-SEED_CELL = (23,23)
-
-seed_value = regions_grid[SEED_CELL]
-
-#seteo un valor de "poblacion" que cada region debe tener
-REGION_POP = 332
-
-#lo siguiente es para probar la identificacion de el borde de una region:
-
+    # Create a figure and axis
+    fig, ax = plt.subplots(figsize=(8,8))
+    
+    # Display the base grid. (This layer is fully opaque.)
+    base_im = ax.imshow(base_grid, cmap=base_cmap)
+    
+    # Overlay the second grid on top with specified transparency.
+    overlay_im = ax.imshow(overlay_grid, cmap=overlay_cmap, alpha=overlay_alpha)
+    
+    # Optionally add a title and colorbars for clarity
+    ax.set_title(title)
+    plt.colorbar(base_im, ax=ax, fraction=0.046, pad=0.04, label="Base Values")
+    plt.colorbar(overlay_im, ax=ax, fraction=0.046, pad=0.04, label="Overlay Values")
+    
+    plt.show()
+    
 def find_region_containing_cell(grid, target_value, target_coords):
     """
     Finds the connected region that contains the target cell and its value.
     Also returns the border of that region if needed.
     """
+    #sugerencia para identificar el boundary de una region:
+    #For very sparse grids (where most cells have the same value), you might want to look into sparse matrices (e.g., using scipy.sparse) to reduce memory usage.
+ 
+    
     # Step 1: Create a mask for the target value
     region_mask = grid == target_value
     
@@ -99,88 +113,64 @@ def find_region_containing_cell(grid, target_value, target_coords):
 
     return region_cells, border_mask, labeled
 
-#para testear el border dettection arond la celda, doy el mismo valor a un rectangulo alreedor de la celda
-region_size = 2
-# Calculate the bounds, making sure they are clamped within the grid limits
-start_row = max(SEED_CELL[0] - region_size // 2, 0)
-end_row = min(SEED_CELL[0] + region_size // 2, regions_grid.shape[0])
-start_col = max(SEED_CELL[1] - region_size // 2, 0)
-end_col = min(SEED_CELL[1] + region_size // 2, regions_grid.shape[1])
-# Assign value of the SEED to the rectangular region
-regions_grid[start_row:end_row, start_col:end_col] = seed_value
+def find_pixel(boundary, field, population):
+    rows, cols = np.where(boundary)
+    #aca elijo tomar el pixel con el valor base mas cercano a cierto dado como argumento
+    selected_floats = field[rows, cols]
+    valid_floats = selected_floats[~np.isnan(selected_floats)]
+    deviations = np.abs(valid_floats - population)
+    index_min_dev_previo = np.argmin(deviations)
+    float_indicado = valid_floats[index_min_dev_previo]
+    index_min_dev = np.where(selected_floats == float_indicado)[0][0]
+    coordinates = rows[index_min_dev], cols[index_min_dev]
+    return coordinates
 
-region_cells, border_mask, labeled = find_region_containing_cell(regions_grid, seed_value, SEED_CELL)
-
-# Step 2: Visualize the region and its border
-bordered_region_grid = np.zeros_like(regions_grid)
-#ONLY USE NON ZERO NATURAL NUMBERS HERE NEXT
-value_region = 1
-value_border = 2
-bordered_region_grid[region_cells] = value_region  # Mark the region cells with value 10
-bordered_region_grid[border_mask] = value_border  # Mark the border cells with value 5
-
-visualize_grids(bordered_region_grid, titles=None, cmap="viridis")
-
-#sugerencia para identificar el boundary de una region:
-#For very sparse grids (where most cells have the same value), you might want to look into sparse matrices (e.g., using scipy.sparse) to reduce memory usage.
-
-#parece que funciona el identificador de borde, pruebo a diseñar un chequeo de que funciono realmente
-#el testeo dio bien, lo deje como comentado aca:
-'''
-for i in range(GRID_SIZE[0]):  # Loop over rows
-    for j in range(GRID_SIZE[1]):  # Loop over columns
-        if bordered_region_grid[i,j] == value_region:
-            if regions_grid[i,j] != seed_value:
-                print("ERROR")
-
-for i in range(GRID_SIZE[0]):  # Loop over rows
-    for j in range(GRID_SIZE[1]):  # Loop over columns
-        if regions_grid[i,j] == seed_value:
-            if bordered_region_grid[i,j] == value_border:
-                print("ERROR")
-                
-if bordered_region_grid[SEED_CELL] != value_region:
-    print("ERROR")
-'''
-#ahora voy a probar loopear la dolatacion a ver que pasa
-#bien lo pude hacer, me sirvio para entender mejor lo que estoy haciendo, ahora lo dejo como comentado
-'''
-changing_grid = np.copy(regions_grid)
-while not np.all(border_mask == False):
-    changing_grid[border_mask] = seed_value
-    region_cells, border_mask, labeled = find_region_containing_cell(changing_grid, seed_value, SEED_CELL)
-    bordered_region_gridd = np.zeros_like(changing_grid)
-    bordered_region_gridd[region_cells] = value_region  # Mark the region cells with value 10
-    bordered_region_gridd[border_mask] = value_border  # Mark the border cells with value 5
-    visualize_grids(bordered_region_gridd, titles=None, cmap="viridis")
-'''
-#ahora pruebo a seleccionar una celda de entre las del borde dada cierta condicion
-#aqui identifico las celdas del borde, creando un array con las coordenadas de dichas entries
-
-true_indices = np.argwhere(border_mask)
-
-#numero de pixeles q forman parte del borde
-numero_pixels = true_indices.shape[0]
-
-#ejemplo simple de condicion:una celda random en elborde
-random_index = np.random.randint(0, numero_pixels)
-random_entry = true_indices[random_index]
-
-#ahora pinto esa celda con el valor original de la celda seed
-
-#regions_grid[random_entry] = seed_value
-regions_grid[tuple(random_entry)] = seed_value
-
-#Para testear, pruebo hacer el proceso de bordear de nuevo:
+if __name__ == '__main__':
     
-region_cells, border_mask, labeled = find_region_containing_cell(regions_grid, seed_value, SEED_CELL)
+    data = population()
+    GRID_SIZE = data.shape
+    base_grid = data
 
-# Step 2: Visualize the region and its border
-bordered_region_grid = np.zeros_like(regions_grid)
-
-bordered_region_grid[region_cells] = value_region  # Mark the region cells with value 10
-bordered_region_grid[border_mask] = value_border  # Mark the border cells with value 5
-
-visualize_grids(bordered_region_grid, titles=None, cmap="viridis")
-
+    #seteo una celda inicial donde empezaria a contar poblacion
+    SEED_CELL = (131,111)
     
+    #seteo un valor de "poblacion" que cada region debe tener
+    REGION_POP = base_grid[SEED_CELL]
+    
+    #Create the region grid (each cell stores a region ID)
+    regions_grid = np.zeros_like(base_grid)
+    
+    seed_value = 1
+    regions_grid[SEED_CELL] = seed_value
+    
+    region_cells, border_mask, labeled = find_region_containing_cell(regions_grid, seed_value, SEED_CELL)
+    
+    value_region = seed_value
+    value_border = seed_value + 1  
+    
+    #intento loopearlo
+    i=0
+    density = REGION_POP
+    while True:
+        #print(density)
+        i+=1
+        pops = base_grid[region_cells]
+        density = np.mean(pops)
+        new_pixel = find_pixel(border_mask, base_grid, density)
+        if np.isnan(base_grid[new_pixel]):
+            print('NaN',base_grid[new_pixel])
+            print('density= ',density)
+            break
+        #print(new_pixel)
+        #print(base_grid[new_pixel])
+        regions_grid[new_pixel] = value_region
+        #print(density)
+        region_cells, border_mask, labeled = find_region_containing_cell(regions_grid, seed_value, SEED_CELL)
+        if np.any(np.isnan(base_grid[region_cells])):
+            print('el borde detector me esta definiendo la region agregando algun nan')
+        regions_grid[region_cells] = value_region  # Mark the region cells with value 10
+        regions_grid[border_mask] = value_border  # Mark the border cells with value 5
+        if i%15 == 0:
+            visualize_overlay(base_grid, regions_grid)
+            #visualize_grids(base_grid, regions_grid, titles=None, cmap="cividis")
+            
